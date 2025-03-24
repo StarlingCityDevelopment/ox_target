@@ -12,7 +12,6 @@ require 'client.compat.qtarget'
 
 local SendNuiMessage = SendNuiMessage
 local GetEntityCoords = GetEntityCoords
-local GetEntityType = GetEntityType
 local HasEntityClearLosToEntity = HasEntityClearLosToEntity
 local GetEntityBoneIndexByName = GetEntityBoneIndexByName
 local GetEntityBonePosition_2 = GetEntityBonePosition_2
@@ -123,12 +122,14 @@ local function shouldHide(option, distance, endCoords, entityHit, entityType, en
     end
 end
 
+local disablePunching = false
+
 local function startTargeting()
     if state.isDisabled() or state.isActive() or IsNuiFocused() or IsPauseMenuActive() then return end
     state.setActive(true)
 
     local zones = {}
-    local endCoords, hasTarget, entityHit, distance, entityType
+    local endCoords, hasTarget, entityHit, distance, entityType, lastEntity, entityModel, zonesChanged
 
     CreateThread(function()
         local dict, texture = utils.getTexture()
@@ -146,20 +147,46 @@ local function startTargeting()
 
             utils.drawZoneSprites(dict, texture)
             DisablePlayerFiring(cache.playerId, true)
+            DisableControlAction(0, 1, true)
+            DisableControlAction(0, 2, true)
+            DisableControlAction(0, 24, true)
             DisableControlAction(0, 25, true)
             DisableControlAction(0, 140, true)
             DisableControlAction(0, 141, true)
             DisableControlAction(0, 142, true)
 
             if state.isNuiFocused() then
-                DisableControlAction(0, 1, true)
-                DisableControlAction(0, 2, true)
-
                 if not hasTarget or options and IsDisabledControlJustPressed(0, 25) then
+                    Wait(1000)
                     state.setNuiFocus(false, false)
                 end
             elseif hasTarget and IsDisabledControlJustPressed(0, mouseButton) then
                 state.setNuiFocus(true, true)
+
+                local cursorX, cursorY = utils.getCursorScreenPosition()
+                SendNuiMessage(json.encode({
+                    event = 'setTarget',
+                    options = options,
+                    zones = zones,
+                    cursorX = cursorX,
+                    cursorY = cursorY,
+                }, { sort_keys = true }))
+
+                disablePunching = true
+                CreateThread(function()
+                    while disablePunching do
+                        DisablePlayerFiring(cache.playerId, true)
+                        DisableControlAction(0, 1, true)
+                        DisableControlAction(0, 2, true)
+                        DisableControlAction(0, 24, true)
+                        DisableControlAction(0, 25, true)
+                        DisableControlAction(0, 140, true)
+                        DisableControlAction(0, 141, true)
+                        DisableControlAction(0, 142, true)
+                        Wait(0)
+                    end
+                end)
+                state.setActive(false)
             end
 
             Wait(0)
@@ -181,28 +208,27 @@ local function startTargeting()
 
         entityHit = rayResult.hitEntity
         endCoords = rayResult.hitCoords
-        entityType = rayResult.entityType
         distance = #(playerCoords - endCoords)
 
-        -- if entityHit ~= 0 and entityHit ~= lastEntity then
-        --     local success, result = pcall(GetEntityType, entityHit)
-        --     entityType = success and result or 0
-        -- end
+        if entityHit ~= 0 and entityHit ~= lastEntity then
+            local success, result = pcall(GetEntityType, entityHit)
+            entityType = success and result or 0
+        end
 
-        -- if entityType == 0 then
-        --     local _flag = flag == 511 and 26 or 511
-        --     local _hit, _entityHit, _endCoords = lib.raycast.fromCamera(_flag, 4, 20)
-        --     local _distance = #(playerCoords - _endCoords)
+        if entityType == 0 then
+            local _flag = flag == 511 and 26 or 511
+            local _hit, _entityHit, _endCoords = lib.raycast.fromCamera(_flag, 4, 20)
+            local _distance = #(playerCoords - _endCoords)
 
-        --     if _distance < distance then
-        --         flag, hit, entityHit, endCoords, distance = _flag, _hit, _entityHit, _endCoords, _distance
+            if _distance < distance then
+                flag, hit, entityHit, endCoords, distance = _flag, _hit, _entityHit, _endCoords, _distance
 
-        --         if entityHit ~= 0 then
-        --             local success, result = pcall(GetEntityType, entityHit)
-        --             entityType = success and result or 0
-        --         end
-        --     end
-        -- end
+                if entityHit ~= 0 then
+                    local success, result = pcall(GetEntityType, entityHit)
+                    entityType = success and result or 0
+                end
+            end
+        end
 
         nearbyZones, zonesChanged = utils.getNearbyZones(endCoords)
 
@@ -216,15 +242,17 @@ local function startTargeting()
                 entityHit = HasEntityClearLosToEntity(entityHit, cache.ped, 7) and entityHit or 0
             end
 
-            if lastEntity ~= entityHit and debug then
-                if lastEntity then
-                    SetEntityDrawOutline(lastEntity, false)
-                end
-
-                if entityType ~= 1 then
-                    SetEntityDrawOutline(entityHit, true)
-                end
+            if lastEntity and lastEntity ~= entityHit then
+                ResetEntityAlpha(lastEntity)
             end
+
+            if options.size ~= 0 and entityType ~= 0 then
+                SetMouseCursorStyle(5)
+            else
+                SetMouseCursorStyle(1)
+            end
+
+            SetEntityAlpha(entityHit, 150, false)
 
             if entityHit > 0 then
                 local success, result = pcall(GetEntityModel, entityHit)
@@ -233,10 +261,7 @@ local function startTargeting()
         end
 
         if hasTarget and (zonesChanged or entityChanged and hasTarget > 1) then
-            SendNuiMessage('{"event": "leftTarget"}')
-
             if entityChanged then options:wipe() end
-
             if debug and lastEntity > 0 then SetEntityDrawOutline(lastEntity, false) end
 
             hasTarget = false
@@ -300,11 +325,9 @@ local function startTargeting()
             if hasTarget and hidden == totalOptions then
                 if hasTarget and hasTarget ~= 1 then
                     hasTarget = false
-                    SendNuiMessage('{"event": "leftTarget"}')
                 end
             elseif menuChanged or hasTarget ~= 1 and hidden ~= totalOptions then
                 hasTarget = options.size
-
                 if currentMenu and options.__global[1]?.name ~= 'builtin:goback' then
                     table.insert(options.__global, 1,
                         {
@@ -315,12 +338,6 @@ local function startTargeting()
                             openMenu = 'home'
                         })
                 end
-
-                SendNuiMessage(json.encode({
-                    event = 'setTarget',
-                    options = options,
-                    zones = zones,
-                }, { sort_keys = true }))
             end
 
             menuChanged = false
@@ -334,19 +351,14 @@ local function startTargeting()
             flag = flag == 511 and 26 or 511
         end
 
-        Wait(hit and 50 or 100)
+        Wait(0)
     end
 
-    if lastEntity and debug then
-        SetEntityDrawOutline(lastEntity, false)
+    if lastEntity > 0 then
+        ResetEntityAlpha(lastEntity)
     end
 
-    state.setNuiFocus(false)
-    SendNuiMessage('{"event": "visible", "state": false}')
-    table.wipe(currentTarget)
-    options:wipe()
-
-    if nearbyZones then table.wipe(nearbyZones) end
+    collectgarbage()
 end
 
 do
@@ -406,8 +418,22 @@ local function getResponse(option, server)
     return response
 end
 
+RegisterNUICallback('close', function(_, cb)
+    cb(1)
+    disablePunching = false
+    state.setNuiFocus(false, false)
+    SendNuiMessage('{"event": "visible", "state": false}')
+end)
+
 RegisterNUICallback('select', function(data, cb)
     cb(1)
+
+    disablePunching = false
+
+    if data[2] == 0 then
+        state.setNuiFocus(false, false)
+        SendNuiMessage('{"event": "visible", "state": false}')
+    end
 
     local zone = data[3] and nearbyZones[data[3]]
 
@@ -457,4 +483,11 @@ RegisterNUICallback('select', function(data, cb)
     if not option?.openMenu and IsNuiFocused() then
         state.setActive(false)
     end
+
+    state.setNuiFocus(false, false)
+    table.wipe(currentTarget)
+    options:wipe()
+    SendNuiMessage('{"event": "visible", "state": false}')
+
+    if nearbyZones then table.wipe(nearbyZones) end
 end)
