@@ -1,35 +1,94 @@
 local utils = {}
 
-local GetWorldCoordFromScreenCoord = GetWorldCoordFromScreenCoord
-local StartShapeTestLosProbe = StartShapeTestLosProbe
-local GetShapeTestResultIncludingMaterial = GetShapeTestResultIncludingMaterial
-
----@param flag number
----@return boolean hit
----@return number entityHit
----@return vector3 endCoords
----@return vector3 surfaceNormal
----@return number materialHash
-function utils.raycastFromCamera(flag)
-    local coords, normal = GetWorldCoordFromScreenCoord(0.5, 0.5)
-    local destination = coords + normal * 10
-    local handle = StartShapeTestLosProbe(coords.x, coords.y, coords.z, destination.x, destination.y, destination.z,
-        flag, cache.ped, 4)
-
-    while true do
-        Wait(0)
-        local retval, hit, endCoords, surfaceNormal, materialHash, entityHit = GetShapeTestResultIncludingMaterial(
-        handle)
-
-        if retval ~= 1 then
-            ---@diagnostic disable-next-line: return-type-mismatch
-            return hit, entityHit, endCoords, surfaceNormal, materialHash
-        end
-    end
-end
+local GetControlNormal = GetControlNormal
+local GetGameplayCamCoord = GetGameplayCamCoord
+local GetGameplayCamRot = GetGameplayCamRot
+local GetGameplayCamFov = GetGameplayCamFov
+local StartShapeTestRay = StartShapeTestRay
+local GetShapeTestResult = GetShapeTestResult
 
 function utils.getTexture()
     return lib.requestStreamedTextureDict('shared'), 'emptydot_32'
+end
+
+function utils.getCursorScreenPosition()
+    return GetControlNormal(0, 239), GetControlNormal(0, 240)
+end
+
+function utils.crossProduct(a, b)
+    return vector3(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    )
+end
+
+function utils.normalizeVector(vec)
+    local length = math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z)
+    if length == 0 then
+        return vector3(0, 0, 0)
+    end
+    return vector3(vec.x / length, vec.y / length, vec.z / length)
+end
+
+function utils.rotationToDirection(rot)
+    local radPitch = math.rad(rot.x)
+    local radYaw   = math.rad(rot.z)
+    local x        = -math.sin(radYaw) * math.cos(radPitch)
+    local y        = math.cos(radYaw) * math.cos(radPitch)
+    local z        = math.sin(radPitch)
+    return vector3(x, y, z)
+end
+
+function utils.screenToWorld(cursorX, cursorY)
+    local screenX, screenY = GetActiveScreenResolution()
+
+    local camPos = GetGameplayCamCoord()
+    local camRot = GetGameplayCamRot(2)
+    local camFov = GetGameplayCamFov()
+
+    local fovRadians = math.rad(camFov)
+    local aspectRatio = screenX / screenY
+
+    local offsetX = (cursorX - 0.5) * 2.0
+    local offsetY = (0.5 - cursorY) * 2.0
+
+    local xOffset = math.tan(fovRadians / 2.0) * offsetX * aspectRatio
+    local yOffset = math.tan(fovRadians / 2.0) * offsetY
+
+    local forward = utils.rotationToDirection(camRot)
+    local worldUp = vector3(0, 0, 1)
+    local right = utils.normalizeVector(utils.crossProduct(forward, worldUp))
+    local up = utils.normalizeVector(utils.crossProduct(right, forward))
+
+    local direction = utils.normalizeVector(forward + right * xOffset + up * yOffset)
+    local destination = camPos + direction * 1000.0
+
+    return camPos, destination
+end
+
+function utils.raycastFromMouse()
+    local cursorX, cursorY = utils.getCursorScreenPosition()
+    local startPos, endPos = utils.screenToWorld(cursorX, cursorY)
+
+    local rayHandle = StartShapeTestRay(startPos.x, startPos.y, startPos.z, endPos.x, endPos.y, endPos.z, -1, 0, 4)
+    local _, hit, hitCoords, surfaceNormal, hitEntity = GetShapeTestResult(rayHandle)
+
+    local entityType = 0
+    if hitEntity ~= 0 and hitEntity ~= lastEntity then
+        local success, result = pcall(GetEntityType, hitEntity)
+        entityType = success and result
+    end
+
+    return {
+        hit = hit,
+        hitCoords = hitCoords,
+        surfaceNormal = surfaceNormal,
+        hitEntity = hitEntity,
+        startPos = startPos,
+        endPos = endPos,
+        entityType = entityType
+    }
 end
 
 -- SetDrawOrigin is limited to 32 calls per frame. Set as 0 to disable.

@@ -125,12 +125,10 @@ end
 
 local function startTargeting()
     if state.isDisabled() or state.isActive() or IsNuiFocused() or IsPauseMenuActive() then return end
-
     state.setActive(true)
 
-    local flag = 511
-    local hit, entityHit, endCoords, distance, lastEntity, entityType, entityModel, hasTarget, zonesChanged
     local zones = {}
+    local endCoords, hasTarget, entityHit, distance, entityType
 
     CreateThread(function()
         local dict, texture = utils.getTexture()
@@ -176,29 +174,35 @@ local function startTargeting()
             break
         end
 
+        SetMouseCursorThisFrame()
+
         local playerCoords = GetEntityCoords(cache.ped)
-        hit, entityHit, endCoords = lib.raycast.fromCamera(flag, 4, 20)
+        local rayResult = utils.raycastFromMouse()
+
+        entityHit = rayResult.hitEntity
+        endCoords = rayResult.hitCoords
+        entityType = rayResult.entityType
         distance = #(playerCoords - endCoords)
 
-        if entityHit ~= 0 and entityHit ~= lastEntity then
-            local success, result = pcall(GetEntityType, entityHit)
-            entityType = success and result or 0
-        end
+        -- if entityHit ~= 0 and entityHit ~= lastEntity then
+        --     local success, result = pcall(GetEntityType, entityHit)
+        --     entityType = success and result or 0
+        -- end
 
-        if entityType == 0 then
-            local _flag = flag == 511 and 26 or 511
-            local _hit, _entityHit, _endCoords = lib.raycast.fromCamera(_flag, 4, 20)
-            local _distance = #(playerCoords - _endCoords)
+        -- if entityType == 0 then
+        --     local _flag = flag == 511 and 26 or 511
+        --     local _hit, _entityHit, _endCoords = lib.raycast.fromCamera(_flag, 4, 20)
+        --     local _distance = #(playerCoords - _endCoords)
 
-            if _distance < distance then
-                flag, hit, entityHit, endCoords, distance = _flag, _hit, _entityHit, _endCoords, _distance
+        --     if _distance < distance then
+        --         flag, hit, entityHit, endCoords, distance = _flag, _hit, _entityHit, _endCoords, _distance
 
-                if entityHit ~= 0 then
-                    local success, result = pcall(GetEntityType, entityHit)
-                    entityType = success and result or 0
-                end
-            end
-        end
+        --         if entityHit ~= 0 then
+        --             local success, result = pcall(GetEntityType, entityHit)
+        --             entityType = success and result or 0
+        --         end
+        --     end
+        -- end
 
         nearbyZones, zonesChanged = utils.getNearbyZones(endCoords)
 
