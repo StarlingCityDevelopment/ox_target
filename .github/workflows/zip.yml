@@ -33,7 +33,7 @@ jobs:
           repo_token: '${{ secrets.GITHUB_TOKEN }}'
           title: 'Ready to download'
           prerelease: true
-          files: qbx_core.zip
+          files: ox_target.zip
 
         env:
           CI: false
