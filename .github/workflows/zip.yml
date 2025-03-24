@@ -21,7 +21,7 @@ jobs:
         run: |
           mkdir -p ./temp/ox_target
           mkdir -p ./temp/ox_target/locales/
-          cp ./{fxmanifest.lua} ./temp/ox_target
+          cp ./fxmanifest.lua ./temp/ox_target
           cp ./{locales/en.json,locales/fr.json} ./temp/ox_target/locales
           cp -r ./{client,server,web} ./temp/ox_target
           cd ./temp && zip -r ../ox_target.zip ./ox_target
