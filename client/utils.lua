@@ -1,5 +1,8 @@
 local utils = {}
 
+local TEXTURE_DICT, TEXTURE_NAME = 'shared', 'emptydot_32'
+local sqrt, rad, sin, cos, tan = math.sqrt, math.rad, math.sin, math.cos, math.tan
+
 local GetControlNormal = GetControlNormal
 local GetGameplayCamCoord = GetGameplayCamCoord
 local GetGameplayCamRot = GetGameplayCamRot
@@ -8,7 +11,7 @@ local StartShapeTestRay = StartShapeTestRay
 local GetShapeTestResult = GetShapeTestResult
 
 function utils.getTexture()
-    return lib.requestStreamedTextureDict('shared'), 'emptydot_32'
+    return lib.requestStreamedTextureDict(TEXTURE_DICT), TEXTURE_NAME
 end
 
 function utils.getCursorScreenPosition()
@@ -24,49 +27,41 @@ function utils.crossProduct(a, b)
 end
 
 function utils.normalizeVector(vec)
-    local length = math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z)
-    if length == 0 then
-        return vector3(0, 0, 0)
-    end
-    return vector3(vec.x / length, vec.y / length, vec.z / length)
+    local length = sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z)
+    return length > 0 and vector3(vec.x / length, vec.y / length, vec.z / length) or vector3(0, 0, 0)
 end
 
 function utils.rotationToDirection(rot)
-    local radPitch = math.rad(rot.x)
-    local radYaw   = math.rad(rot.z)
-    local x        = -math.sin(radYaw) * math.cos(radPitch)
-    local y        = math.cos(radYaw) * math.cos(radPitch)
-    local z        = math.sin(radPitch)
-    return vector3(x, y, z)
+    local radPitch, radYaw = rad(rot.x), rad(rot.z)
+    local cosPitch = cos(radPitch)
+    return vector3(
+        -sin(radYaw) * cosPitch,
+        cos(radYaw) * cosPitch,
+        sin(radPitch)
+    )
 end
 
 function utils.screenToWorld(cursorX, cursorY)
     local screenX, screenY = GetActiveScreenResolution()
-
     local camPos = GetGameplayCamCoord()
     local camRot = GetGameplayCamRot(2)
-    local camFov = GetGameplayCamFov()
 
-    local fovRadians = math.rad(camFov)
+    local fovRadians = rad(GetGameplayCamFov()) * 0.5
     local aspectRatio = screenX / screenY
+    local tanFov = tan(fovRadians)
 
-    local offsetX = (cursorX - 0.5) * 2.0
-    local offsetY = (0.5 - cursorY) * 2.0
-
-    local xOffset = math.tan(fovRadians / 2.0) * offsetX * aspectRatio
-    local yOffset = math.tan(fovRadians / 2.0) * offsetY
+    local offsetX = (cursorX - 0.5) * 2.0 * aspectRatio * tanFov
+    local offsetY = (0.5 - cursorY) * 2.0 * tanFov
 
     local forward = utils.rotationToDirection(camRot)
-    local worldUp = vector3(0, 0, 1)
-    local right = utils.normalizeVector(utils.crossProduct(forward, worldUp))
+    local right = utils.normalizeVector(utils.crossProduct(forward, vector3(0, 0, 1)))
     local up = utils.normalizeVector(utils.crossProduct(right, forward))
 
-    local direction = utils.normalizeVector(forward + right * xOffset + up * yOffset)
-    local destination = camPos + direction * 1000.0
-
-    return camPos, destination
+    local direction = utils.normalizeVector(forward + right * offsetX + up * offsetY)
+    return camPos, camPos + direction * 1000.0
 end
 
+local lastEntityType = {}
 function utils.raycastFromMouse()
     local cursorX, cursorY = utils.getCursorScreenPosition()
     local startPos, endPos = utils.screenToWorld(cursorX, cursorY)
@@ -76,8 +71,11 @@ function utils.raycastFromMouse()
 
     local entityType = 0
     if hitEntity ~= 0 and hitEntity ~= lastEntity then
-        local success, result = pcall(GetEntityType, hitEntity)
-        entityType = success and result
+        if not lastEntityType[hitEntity] then
+            local success, result = pcall(GetEntityType, hitEntity)
+            lastEntityType[hitEntity] = success and result or 0
+        end
+        entityType = lastEntityType[hitEntity]
     end
 
     return {

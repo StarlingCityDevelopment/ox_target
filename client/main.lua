@@ -33,7 +33,7 @@ local mouseButton = GetConvarInt('ox_target:leftClick', 1) == 1 and 24 or 25
 local debug = GetConvarInt('ox_target:debug', 0) == 1
 local vec0 = vec3(0, 0, 0)
 
----@param option OxTargetOption
+---@param option OxTargetOption 
 ---@param distance number
 ---@param endCoords vector3
 ---@param entityHit? number
@@ -130,11 +130,10 @@ local function startTargeting()
 
     local zones = {}
     local endCoords, hasTarget, entityHit, distance, entityType, lastEntity, entityModel, zonesChanged
+    local dict, texture = utils.getTexture()
+    local lastCoords
 
     CreateThread(function()
-        local dict, texture = utils.getTexture()
-        local lastCoords
-
         while state.isActive() do
             lastCoords = endCoords == vec0 and lastCoords or endCoords or vec0
 
@@ -143,6 +142,25 @@ local function startTargeting()
                     0.2,
                     ---@diagnostic disable-next-line: param-type-mismatch
                     255, 42, 24, 100, false, false, 0, true, false, false, false)
+            end
+
+            if hasTarget then
+                local cursorX, cursorY = utils.getCursorScreenPosition()
+                SetTextScale(0.35, 0.35)
+                SetTextFont(4)
+                SetTextProportional(1)
+                SetTextColour(255, 255, 255, 215)
+                SetTextEntry("STRING")
+                SetTextCentre(true)
+                AddTextComponentString("intéragir")
+                EndTextCommandDisplayText(cursorX + 0.004, cursorY + 0.025)
+
+                if options.size ~= 0 and entityType ~= 0 then
+                    SetMouseCursorStyle(5)
+                    SetEntityAlpha(entityHit, 150, false)
+                end
+            else
+                SetMouseCursorStyle(1)
             end
 
             utils.drawZoneSprites(dict, texture)
@@ -192,6 +210,10 @@ local function startTargeting()
             Wait(0)
         end
 
+        if lastEntity > 0 then
+            ResetEntityAlpha(lastEntity)
+        end
+
         SetStreamedTextureDictAsNoLongerNeeded(dict)
     end)
 
@@ -208,28 +230,8 @@ local function startTargeting()
 
         entityHit = rayResult.hitEntity
         endCoords = rayResult.hitCoords
+        entityType = rayResult.entityType
         distance = #(playerCoords - endCoords)
-
-        if entityHit ~= 0 and entityHit ~= lastEntity then
-            local success, result = pcall(GetEntityType, entityHit)
-            entityType = success and result or 0
-        end
-
-        if entityType == 0 then
-            local _flag = flag == 511 and 26 or 511
-            local _hit, _entityHit, _endCoords = lib.raycast.fromCamera(_flag, 4, 20)
-            local _distance = #(playerCoords - _endCoords)
-
-            if _distance < distance then
-                flag, hit, entityHit, endCoords, distance = _flag, _hit, _entityHit, _endCoords, _distance
-
-                if entityHit ~= 0 then
-                    local success, result = pcall(GetEntityType, entityHit)
-                    entityType = success and result or 0
-                end
-            end
-        end
-
         nearbyZones, zonesChanged = utils.getNearbyZones(endCoords)
 
         local entityChanged = entityHit ~= lastEntity
@@ -241,18 +243,6 @@ local function startTargeting()
             if flag ~= 511 then
                 entityHit = HasEntityClearLosToEntity(entityHit, cache.ped, 7) and entityHit or 0
             end
-
-            if lastEntity and lastEntity ~= entityHit then
-                ResetEntityAlpha(lastEntity)
-            end
-
-            if options.size ~= 0 and entityType ~= 0 then
-                SetMouseCursorStyle(5)
-            else
-                SetMouseCursorStyle(1)
-            end
-
-            SetEntityAlpha(entityHit, 150, false)
 
             if entityHit > 0 then
                 local success, result = pcall(GetEntityModel, entityHit)
@@ -271,10 +261,15 @@ local function startTargeting()
             options:set(entityHit, entityType, entityModel)
         end
 
+        if lastEntity ~= entityHit then
+            ResetEntityAlpha(lastEntity)
+        end
         lastEntity = entityHit
+
         currentTarget.entity = entityHit
         currentTarget.coords = endCoords
         currentTarget.distance = distance
+
         local hidden = 0
         local totalOptions = 0
 
@@ -352,10 +347,6 @@ local function startTargeting()
         end
 
         Wait(0)
-    end
-
-    if lastEntity > 0 then
-        ResetEntityAlpha(lastEntity)
     end
 
     collectgarbage()
