@@ -116,6 +116,10 @@ local function shouldHide(option, distance, endCoords, entityHit, entityType, en
         end
     end
 
+    if not option.me and entityHit == cache.ped then
+        return true
+    end
+
     if option.canInteract then
         local success, resp = pcall(option.canInteract, entityHit, distance, endCoords, option.name, bone)
         return not success or not resp
