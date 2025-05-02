@@ -261,8 +261,11 @@ local function startTargeting()
             hasTarget = false
         end
 
-        if newOptions and entityModel and entityHit > 0 then
-            options:set(entityHit, entityType, entityModel)
+        local shouldReloadOptions = newOptions and entityModel and entityHit > 0
+        if shouldReloadOptions then
+            if entityType ~= 1 or entityChanged then
+                options:set(entityHit, entityType, entityModel)
+            end
         end
 
         if lastEntity ~= entityHit then
